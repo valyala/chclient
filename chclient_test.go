@@ -12,6 +12,9 @@ func TestClientDo(t *testing.T) {
 	query := fmt.Sprintf("SELECT * from system.numbers limit %d", expectedRows)
 
 	c := &Client{}
+	if err := c.Ping(); err != nil {
+		t.Fatalf("error in ping: %s", err)
+	}
 	err := c.Do(query, func(r *tsvreader.Reader) {
 		i := 0
 		for r.Next() {

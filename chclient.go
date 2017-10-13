@@ -51,7 +51,14 @@ type Client struct {
 // DefaultTimeout is the default timeout for Client.
 var DefaultTimeout = 30 * time.Second
 
+// Ping verifies that the client can connect to clickhouse.
+func (c *Client) Ping() error {
+	return c.Do("SELECT 1", nil)
+}
+
 // Do sends the given query to clickhouse and calls f for reading query results.
+//
+// f may be nil if query result isn't needed.
 func (c *Client) Do(query string, f func(*tsvreader.Reader)) error {
 	deadline := time.Now().Add(c.timeout())
 	ctx, cancel := context.WithDeadline(context.Background(), deadline)
@@ -69,6 +76,9 @@ func (c *Client) Do(query string, f func(*tsvreader.Reader)) error {
 		respBody, _ := ioutil.ReadAll(resp.Body)
 		return fmt.Errorf("unexpected status code for query %q sent to %q: %d. Response body: %q",
 			query, c.addr(), resp.StatusCode, respBody)
+	}
+	if f == nil {
+		return nil
 	}
 
 	r := tsvreader.New(resp.Body)
