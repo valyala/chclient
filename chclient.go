@@ -32,6 +32,11 @@ type Client struct {
 	// Password is empty if not set.
 	Password string
 
+	// Database to use.
+	//
+	// Database is `default` if not set.
+	Database string
+
 	// Whether to send requests over https.
 	//
 	// Requests are sent over http by default.
@@ -91,6 +96,9 @@ func (c *Client) prepareRequest(query string) *http.Request {
 	xurl := fmt.Sprintf("%s://%s/?user=%s", scheme, c.addr(), url.QueryEscape(c.user()))
 	if c.Password != "" {
 		xurl += fmt.Sprintf("&password=%s", url.QueryEscape(c.Password))
+	}
+	if c.Database != "" {
+		xurl += fmt.Sprintf("&database=%s", url.QueryEscape(c.Database))
 	}
 	body := bytes.NewBufferString(query)
 	req, err := http.NewRequest("POST", xurl, body)
