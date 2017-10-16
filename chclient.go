@@ -8,6 +8,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 )
 
@@ -51,6 +52,9 @@ type Client struct {
 // DefaultTimeout is the default timeout for Client.
 var DefaultTimeout = 30 * time.Second
 
+// ReadRowsFunc must read rows from r.
+type ReadRowsFunc func(r *tsvreader.Reader) error
+
 // Ping verifies that the client can connect to clickhouse.
 func (c *Client) Ping() error {
 	return c.Do("SELECT 1", nil)
@@ -61,7 +65,7 @@ func (c *Client) Ping() error {
 // The maximum query duration is limited by Client.Timeout.
 //
 // f may be nil if query result isn't needed.
-func (c *Client) Do(query string, f func(*tsvreader.Reader)) error {
+func (c *Client) Do(query string, f ReadRowsFunc) error {
 	deadline := time.Now().Add(c.timeout())
 	ctx, cancel := context.WithDeadline(context.Background(), deadline)
 	defer cancel()
@@ -74,7 +78,7 @@ func (c *Client) Do(query string, f func(*tsvreader.Reader)) error {
 // The maximum query duration may be limited with the ctx.
 //
 // f may be nil if query result isn't needed.
-func (c *Client) DoContext(ctx context.Context, query string, f func(*tsvreader.Reader)) error {
+func (c *Client) DoContext(ctx context.Context, query string, f ReadRowsFunc) error {
 	req := c.prepareRequest(query)
 	req = req.WithContext(ctx)
 	resp, err := http.DefaultClient.Do(req)
@@ -92,21 +96,17 @@ func (c *Client) DoContext(ctx context.Context, query string, f func(*tsvreader.
 		return nil
 	}
 
-	r := tsvreader.New(resp.Body)
-	ch := make(chan struct{})
-	go func() {
-		f(r)
-		close(ch)
-	}()
-
-	select {
-	case <-ch:
-		return r.Error()
-	case <-ctx.Done():
-		// wait until f finishes
-		<-ch
-		return ctx.Err()
+	ct := resp.Header.Get("Content-Type")
+	if !strings.HasPrefix(ct, "text/tab-separated-values") {
+		return fmt.Errorf("unexpected Content-Type for query %q sent to %q: %q. Expecting %q",
+			query, c.addr(), ct, "text/tab-separated-values")
 	}
+
+	r := tsvreader.New(resp.Body)
+	if err := f(r); err != nil {
+		return err
+	}
+	return r.Error()
 }
 
 func (c *Client) prepareRequest(query string) *http.Request {
