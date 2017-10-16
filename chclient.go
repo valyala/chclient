@@ -58,12 +58,23 @@ func (c *Client) Ping() error {
 
 // Do sends the given query to clickhouse and calls f for reading query results.
 //
+// The maximum query duration is limited by Client.Timeout.
+//
 // f may be nil if query result isn't needed.
 func (c *Client) Do(query string, f func(*tsvreader.Reader)) error {
 	deadline := time.Now().Add(c.timeout())
 	ctx, cancel := context.WithDeadline(context.Background(), deadline)
 	defer cancel()
+	return c.DoContext(ctx, query, f)
+}
 
+// DoContext sends the given query using the given ctx to clickhouse
+// and calls f for reading query results.
+//
+// The maximum query duration may be limited with the ctx.
+//
+// f may be nil if query result isn't needed.
+func (c *Client) DoContext(ctx context.Context, query string, f func(*tsvreader.Reader)) error {
 	req := c.prepareRequest(query)
 	req = req.WithContext(ctx)
 	resp, err := http.DefaultClient.Do(req)
