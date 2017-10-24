@@ -8,3 +8,7 @@
 * Easily reads responses with billion rows thanks to response streaming.
   There is no need to fit the whole response in memory.
 * Works ideally with [chproxy](https://github.com/Vertamedia/chproxy).
+
+## Documentation
+
+See [these docs](https://godoc.org/github.com/valyala/chclient).
