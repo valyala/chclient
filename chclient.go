@@ -43,6 +43,13 @@ type Client struct {
 	// Requests are sent over http by default.
 	UseHTTPS bool
 
+	// Whether to request compressed responses from clickhouse.
+	//
+	// Response compression may reduce network usage.
+	//
+	// Response compression is disabled by default.
+	CompressResponse bool
+
 	// Timeout is the maximum duration for the query.
 	//
 	// DefaultTimeout is used by default.
@@ -120,6 +127,9 @@ func (c *Client) prepareRequest(query string) *http.Request {
 	}
 	if c.Database != "" {
 		xurl += fmt.Sprintf("&database=%s", url.QueryEscape(c.Database))
+	}
+	if c.CompressResponse {
+		xurl += "&enable_http_compression=1"
 	}
 	body := bytes.NewBufferString(query)
 	req, err := http.NewRequest("POST", xurl, body)

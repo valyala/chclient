@@ -8,13 +8,27 @@ import (
 )
 
 // This test works only if local clickhouse is installed
-func TestClientDo(t *testing.T) {
-	expectedRows := int(1e6)
-	query := fmt.Sprintf("SELECT * FROM system.numbers LIMIT %d", expectedRows)
-
+func TestClientDoNoCompression(t *testing.T) {
 	c := &Client{
-		Timeout: 5 * time.Second,
+		Timeout:          5 * time.Second,
+		CompressResponse: false,
 	}
+	testClientDo(t, c)
+}
+
+// This test works only if local clickhouse is installed
+func TestClientDoWithCompression(t *testing.T) {
+	c := &Client{
+		Timeout:          5 * time.Second,
+		CompressResponse: true,
+	}
+	testClientDo(t, c)
+}
+
+func testClientDo(t *testing.T, c *Client) {
+	expectedRows := int(1e6)
+	query := fmt.Sprintf("SELECT number, number+1 FROM system.numbers LIMIT %d", expectedRows)
+
 	if err := c.Ping(); err != nil {
 		t.Fatalf("error in ping: %s", err)
 	}
@@ -23,7 +37,11 @@ func TestClientDo(t *testing.T) {
 		for r.Next() {
 			n := r.Int()
 			if n != i {
-				return fmt.Errorf("unexpected result: %d. Expecting %d", n, i)
+				return fmt.Errorf("unexpected col1: %d. Expecting %d", n, i)
+			}
+			m := r.Int()
+			if m != n+1 {
+				return fmt.Errorf("unexpected col2: %d. Expecting %d", m, n+1)
 			}
 			i++
 		}
