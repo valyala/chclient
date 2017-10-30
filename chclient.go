@@ -136,6 +136,13 @@ func (c *Client) prepareRequest(query string) *http.Request {
 	if err != nil {
 		panic(fmt.Sprintf("BUG: cannot create request from xurl=%q, query=%q", xurl, query))
 	}
+	if !c.CompressResponse {
+		// Explicitly disable response compression if it isn't enabled,
+		// since net/http client by default transparently enables
+		// response compression.
+		// See DisableCompression at https://golang.org/pkg/net/http/ .
+		req.Header.Set("Accept-Encoding", "identity")
+	}
 	return req
 }
 
