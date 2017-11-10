@@ -57,3 +57,43 @@ func testClientDo(t *testing.T, c *Client) {
 		t.Fatalf("unexpected error: %s", err)
 	}
 }
+
+func TestPrepareRequest(t *testing.T) {
+	testCases := []struct {
+		name     string
+		params   []string
+		expected string
+	}{
+		{
+			name:     "empty params",
+			expected: "http://localhost:8123/?user=default",
+		},
+		{
+			name: "set params",
+			params: []string{
+				"no_cache=1",
+				"default_format=Pretty",
+			},
+			expected: "http://localhost:8123/?no_cache=1&default_format=Pretty&user=default",
+		},
+		{
+			name: "overriding params",
+			params: []string{
+				"user=foo",
+			},
+			expected: "http://localhost:8123/?user=foo&user=default",
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			c := &Client{
+				URLParams: tc.params,
+			}
+			req := c.prepareRequest("SELECT * FROM system.numbers LIMIT 10")
+			got := req.URL.String()
+			if got != tc.expected {
+				t.Fatalf("got: %q; expected: %q", got, tc.expected)
+			}
+		})
+	}
+}

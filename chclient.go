@@ -54,6 +54,9 @@ type Client struct {
 	//
 	// DefaultTimeout is used by default.
 	Timeout time.Duration
+
+	// URLParams to add to URL before requesting clickhouse.
+	URLParams []string
 }
 
 // DefaultTimeout is the default timeout for Client.
@@ -121,16 +124,24 @@ func (c *Client) prepareRequest(query string) *http.Request {
 	if c.UseHTTPS {
 		scheme = "https"
 	}
-	xurl := fmt.Sprintf("%s://%s/?user=%s", scheme, c.addr(), url.QueryEscape(c.user()))
+
+	var params string
+	// process URLParams to avoid config-params overriding
+	for _, p := range c.URLParams {
+		params += p + "&"
+	}
+	params += fmt.Sprintf("user=%s", url.QueryEscape(c.user()))
 	if c.Password != "" {
-		xurl += fmt.Sprintf("&password=%s", url.QueryEscape(c.Password))
+		params += fmt.Sprintf("&password=%s", url.QueryEscape(c.Password))
 	}
 	if c.Database != "" {
-		xurl += fmt.Sprintf("&database=%s", url.QueryEscape(c.Database))
+		params += fmt.Sprintf("&database=%s", url.QueryEscape(c.Database))
 	}
 	if c.CompressResponse {
-		xurl += "&enable_http_compression=1"
+		params += "&enable_http_compression=1"
 	}
+	xurl := fmt.Sprintf("%s://%s/?%s", scheme, c.addr(), params)
+
 	body := bytes.NewBufferString(query)
 	req, err := http.NewRequest("POST", xurl, body)
 	if err != nil {
@@ -143,6 +154,7 @@ func (c *Client) prepareRequest(query string) *http.Request {
 		// See DisableCompression at https://golang.org/pkg/net/http/ .
 		req.Header.Set("Accept-Encoding", "identity")
 	}
+
 	return req
 }
 
