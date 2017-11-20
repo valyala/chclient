@@ -56,6 +56,13 @@ type Client struct {
 	Timeout time.Duration
 
 	// URLParams to add to URL before requesting clickhouse.
+	//
+	// For instance,
+	//
+	//     Client.URLParams = []string{
+	//         "default_format=Pretty",
+	//         "no_cache=1",
+	//     }
 	URLParams []string
 }
 
@@ -125,22 +132,22 @@ func (c *Client) prepareRequest(query string) *http.Request {
 		scheme = "https"
 	}
 
-	var params string
-	// process URLParams to avoid config-params overriding
+	args := make([]string, 0, len(c.URLParams)+4)
 	for _, p := range c.URLParams {
-		params += p + "&"
+		args = append(args, p)
 	}
-	params += fmt.Sprintf("user=%s", url.QueryEscape(c.user()))
+
+	args = append(args, fmt.Sprintf("user=%s", url.QueryEscape(c.user())))
 	if c.Password != "" {
-		params += fmt.Sprintf("&password=%s", url.QueryEscape(c.Password))
+		args = append(args, fmt.Sprintf("password=%s", url.QueryEscape(c.Password)))
 	}
 	if c.Database != "" {
-		params += fmt.Sprintf("&database=%s", url.QueryEscape(c.Database))
+		args = append(args, fmt.Sprintf("database=%s", url.QueryEscape(c.Database)))
 	}
 	if c.CompressResponse {
-		params += "&enable_http_compression=1"
+		args = append(args, "enable_http_compression=1")
 	}
-	xurl := fmt.Sprintf("%s://%s/?%s", scheme, c.addr(), params)
+	xurl := fmt.Sprintf("%s://%s/?%s", scheme, c.addr(), strings.Join(args, "&"))
 
 	body := bytes.NewBufferString(query)
 	req, err := http.NewRequest("POST", xurl, body)
