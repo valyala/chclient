@@ -89,7 +89,7 @@ func TestPrepareRequest(t *testing.T) {
 			c := &Client{
 				URLParams: tc.params,
 			}
-			req := c.prepareRequest("SELECT * FROM system.numbers LIMIT 10")
+			req := c.prepareRequest(c.addr(), "SELECT * FROM system.numbers LIMIT 10")
 			got := req.URL.String()
 			if got != tc.expected {
 				t.Fatalf("got: %q; expected: %q", got, tc.expected)

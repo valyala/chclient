@@ -23,6 +23,12 @@ type Client struct {
 	// localhost:8123 is used by default.
 	Addr string
 
+	// FallbackAddr is a fallback clickhouse address that is used
+	// if request to Addr fails.
+	//
+	// By default there is no fallback address.
+	FallbackAddr string
+
 	// User to use when connecting to clickhouse.
 	//
 	// User is `default` if not set.
@@ -96,19 +102,23 @@ func (c *Client) Do(query string, f ReadRowsFunc) error {
 //
 // f may be nil if query result isn't needed.
 func (c *Client) DoContext(ctx context.Context, query string, f ReadRowsFunc) error {
-	req := c.prepareRequest(query)
-	req = req.WithContext(ctx)
-	resp, err := http.DefaultClient.Do(req)
+	addr := c.addr()
+	resp, err := c.doRequest(ctx, addr, query)
 	if err != nil {
-		return fmt.Errorf("error when performing query %q at %q: %s", query, c.addr(), err)
+		// Try requesting fallback address.
+		addr = c.FallbackAddr
+		if len(addr) == 0 {
+			// There is no fallback address. Just return the error.
+			return err
+		}
+		resp2, err2 := c.doRequest(ctx, addr, query)
+		if err2 != nil {
+			return fmt.Errorf("cannot request neither primary nor fallback address: %q and %q", err, err2)
+		}
+		resp = resp2
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		respBody, _ := ioutil.ReadAll(resp.Body)
-		return fmt.Errorf("unexpected status code for query %q sent to %q: %d. Response body: %q",
-			query, c.addr(), resp.StatusCode, respBody)
-	}
 	if f == nil {
 		return nil
 	}
@@ -116,7 +126,7 @@ func (c *Client) DoContext(ctx context.Context, query string, f ReadRowsFunc) er
 	ct := resp.Header.Get("Content-Type")
 	if !strings.HasPrefix(ct, "text/tab-separated-values") {
 		return fmt.Errorf("unexpected Content-Type for query %q sent to %q: %q. Expecting %q",
-			query, c.addr(), ct, "text/tab-separated-values")
+			query, addr, ct, "text/tab-separated-values")
 	}
 
 	r := tsvreader.New(resp.Body)
@@ -126,7 +136,23 @@ func (c *Client) DoContext(ctx context.Context, query string, f ReadRowsFunc) er
 	return r.Error()
 }
 
-func (c *Client) prepareRequest(query string) *http.Request {
+func (c *Client) doRequest(ctx context.Context, addr, query string) (*http.Response, error) {
+	req := c.prepareRequest(addr, query)
+	req = req.WithContext(ctx)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("error when performing query %q at %q: %s", query, addr, err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := ioutil.ReadAll(resp.Body)
+		resp.Body.Close()
+		return nil, fmt.Errorf("unexpected status code for query %q sent to %q: %d. Response body: %q",
+			query, addr, resp.StatusCode, respBody)
+	}
+	return resp, nil
+}
+
+func (c *Client) prepareRequest(addr, query string) *http.Request {
 	scheme := "http"
 	if c.UseHTTPS {
 		scheme = "https"
@@ -147,7 +173,7 @@ func (c *Client) prepareRequest(query string) *http.Request {
 	if c.CompressResponse {
 		args = append(args, "enable_http_compression=1")
 	}
-	xurl := fmt.Sprintf("%s://%s/?%s", scheme, c.addr(), strings.Join(args, "&"))
+	xurl := fmt.Sprintf("%s://%s/?%s", scheme, addr, strings.Join(args, "&"))
 
 	body := bytes.NewBufferString(query)
 	req, err := http.NewRequest("POST", xurl, body)
