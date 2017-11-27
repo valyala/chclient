@@ -29,21 +29,6 @@ type Client struct {
 	// By default there is no fallback address.
 	FallbackAddr string
 
-	// User to use when connecting to clickhouse.
-	//
-	// User is `default` if not set.
-	User string
-
-	// Password to use when connecting to clickhouse.
-	//
-	// Password is empty if not set.
-	Password string
-
-	// Database to use.
-	//
-	// Database is `default` if not set.
-	Database string
-
 	// Whether to send requests over https.
 	//
 	// Requests are sent over http by default.
@@ -60,6 +45,25 @@ type Client struct {
 	//
 	// DefaultTimeout is used by default.
 	Timeout time.Duration
+
+	Params
+}
+
+type Params struct {
+	// User to use when connecting to clickhouse.
+	//
+	// User is `default` if not set.
+	User string
+
+	// Password to use when connecting to clickhouse.
+	//
+	// Password is empty if not set.
+	Password string
+
+	// Database to use.
+	//
+	// Database is `default` if not set.
+	Database string
 
 	// URLParams to add to URL before requesting clickhouse.
 	//
@@ -95,6 +99,18 @@ func (c *Client) Do(query string, f ReadRowsFunc) error {
 	return c.DoContext(ctx, query, f)
 }
 
+// DoParams sends the given query with given params to clickhouse and calls f for reading query results.
+//
+// The maximum query duration is limited by Client.Timeout.
+//
+// f may be nil if query result isn't needed.
+func (c *Client) DoParams(query string, params Params, f ReadRowsFunc) error {
+	deadline := time.Now().Add(c.timeout())
+	ctx, cancel := context.WithDeadline(context.Background(), deadline)
+	defer cancel()
+	return c.doContext(ctx, query, params, f)
+}
+
 // DoContext sends the given query using the given ctx to clickhouse
 // and calls f for reading query results.
 //
@@ -102,8 +118,12 @@ func (c *Client) Do(query string, f ReadRowsFunc) error {
 //
 // f may be nil if query result isn't needed.
 func (c *Client) DoContext(ctx context.Context, query string, f ReadRowsFunc) error {
+	return c.doContext(ctx, query, c.Params, f)
+}
+
+func (c *Client) doContext(ctx context.Context, query string, params Params, f ReadRowsFunc) error {
 	addr := c.addr()
-	resp, err := c.doRequest(ctx, addr, query)
+	resp, err := c.doRequest(ctx, addr, query, params)
 	if err != nil {
 		// Try requesting fallback address.
 		addr = c.FallbackAddr
@@ -111,7 +131,7 @@ func (c *Client) DoContext(ctx context.Context, query string, f ReadRowsFunc) er
 			// There is no fallback address. Just return the error.
 			return err
 		}
-		resp2, err2 := c.doRequest(ctx, addr, query)
+		resp2, err2 := c.doRequest(ctx, addr, query, params)
 		if err2 != nil {
 			return fmt.Errorf("cannot request neither primary nor fallback address: %q and %q", err, err2)
 		}
@@ -136,8 +156,8 @@ func (c *Client) DoContext(ctx context.Context, query string, f ReadRowsFunc) er
 	return r.Error()
 }
 
-func (c *Client) doRequest(ctx context.Context, addr, query string) (*http.Response, error) {
-	req := c.prepareRequest(addr, query)
+func (c *Client) doRequest(ctx context.Context, addr, query string, params Params) (*http.Response, error) {
+	req := c.prepareRequest(addr, query, params)
 	req = req.WithContext(ctx)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -152,23 +172,27 @@ func (c *Client) doRequest(ctx context.Context, addr, query string) (*http.Respo
 	return resp, nil
 }
 
-func (c *Client) prepareRequest(addr, query string) *http.Request {
+func (c *Client) prepareRequest(addr, query string, params Params) *http.Request {
 	scheme := "http"
 	if c.UseHTTPS {
 		scheme = "https"
 	}
 
-	args := make([]string, 0, len(c.URLParams)+4)
-	for _, p := range c.URLParams {
+	args := make([]string, 0, len(params.URLParams)+4)
+	for _, p := range params.URLParams {
 		args = append(args, p)
 	}
 
-	args = append(args, fmt.Sprintf("user=%s", url.QueryEscape(c.user())))
-	if c.Password != "" {
-		args = append(args, fmt.Sprintf("password=%s", url.QueryEscape(c.Password)))
+	user := "default"
+	if len(params.User) > 0 {
+		user = url.QueryEscape(params.User)
 	}
-	if c.Database != "" {
-		args = append(args, fmt.Sprintf("database=%s", url.QueryEscape(c.Database)))
+	args = append(args, fmt.Sprintf("user=%s", user))
+	if params.Password != "" {
+		args = append(args, fmt.Sprintf("password=%s", url.QueryEscape(params.Password)))
+	}
+	if params.Database != "" {
+		args = append(args, fmt.Sprintf("database=%s", url.QueryEscape(params.Database)))
 	}
 	if c.CompressResponse {
 		args = append(args, "enable_http_compression=1")
@@ -196,13 +220,6 @@ func (c *Client) addr() string {
 		return "localhost:8123"
 	}
 	return c.Addr
-}
-
-func (c *Client) user() string {
-	if c.User == "" {
-		return "default"
-	}
-	return c.User
 }
 
 func (c *Client) timeout() time.Duration {

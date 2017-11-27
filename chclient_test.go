@@ -61,7 +61,7 @@ func testClientDo(t *testing.T, c *Client) {
 func TestPrepareRequest(t *testing.T) {
 	testCases := []struct {
 		name     string
-		params   []string
+		params   Params
 		expected string
 	}{
 		{
@@ -69,27 +69,41 @@ func TestPrepareRequest(t *testing.T) {
 			expected: "http://localhost:8123/?user=default",
 		},
 		{
-			name: "set params",
-			params: []string{
-				"no_cache=1",
-				"default_format=Pretty",
+			name: "url params",
+			params: Params{
+				URLParams: []string{
+					"no_cache=1",
+					"default_format=Pretty",
+				},
 			},
 			expected: "http://localhost:8123/?no_cache=1&default_format=Pretty&user=default",
 		},
 		{
-			name: "overriding params",
-			params: []string{
-				"user=foo",
+			name: "overriding url params",
+			params: Params{
+				URLParams: []string{
+					"user=foo",
+				},
 			},
 			expected: "http://localhost:8123/?user=foo&user=default",
 		},
+		{
+			name: "full params",
+			params: Params{
+				User:     "foo",
+				Password: "bar",
+				Database: "data",
+				URLParams: []string{
+					"no_cache=1",
+				},
+			},
+			expected: "http://localhost:8123/?no_cache=1&user=foo&password=bar&database=data",
+		},
 	}
+	c := &Client{}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			c := &Client{
-				URLParams: tc.params,
-			}
-			req := c.prepareRequest(c.addr(), "SELECT * FROM system.numbers LIMIT 10")
+			req := c.prepareRequest(c.addr(), "SELECT * FROM system.numbers LIMIT 10", tc.params)
 			got := req.URL.String()
 			if got != tc.expected {
 				t.Fatalf("got: %q; expected: %q", got, tc.expected)
