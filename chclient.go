@@ -5,9 +5,11 @@ import (
 	"context"
 	"fmt"
 	"github.com/valyala/tsvreader"
+	"io"
 	"io/ioutil"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 )
@@ -70,6 +72,9 @@ type Client struct {
 	//         "no_cache=1",
 	//     }
 	URLParams []string
+
+	// Folder to store buffered responses
+	BufferResponseFolder string
 }
 
 // DefaultTimeout is the default timeout for Client.
@@ -129,7 +134,42 @@ func (c *Client) DoContext(ctx context.Context, query string, f ReadRowsFunc) er
 			query, addr, ct, "text/tab-separated-values")
 	}
 
-	r := tsvreader.New(resp.Body)
+	var input io.Reader
+
+	if c.BufferResponseFolder != "" {
+		// Create temporary file to store response on disk
+		tmpfile, err := ioutil.TempFile(c.BufferResponseFolder, "clickhouse_buffered_response")
+		if err != nil {
+			return err
+		}
+
+		defer os.Remove(tmpfile.Name())
+
+		_, err = io.Copy(tmpfile, resp.Body)
+
+		if err != nil {
+			return err
+		}
+
+		// Close temp file to flush changes to disk
+		if err := tmpfile.Close(); err != nil {
+			return err
+		}
+
+		bufferedFile, err := os.Open(tmpfile.Name())
+
+		if err != nil {
+			return err
+		}
+
+		defer bufferedFile.Close()
+
+		input = bufferedFile
+	} else {
+		input = resp.Body
+	}
+
+	r := tsvreader.New(input)
 	if err := f(r); err != nil {
 		return err
 	}
