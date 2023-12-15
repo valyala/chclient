@@ -8,6 +8,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -141,7 +142,9 @@ func (c *Client) doRequest(ctx context.Context, addr, query string) (*http.Respo
 	req = req.WithContext(ctx)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("error when performing query %q at %q: %s", query, addr, err)
+		var re = regexp.MustCompile(`(?U)(password=).*(: |&.*)`)
+		errWithoutPassword := re.ReplaceAllString(err.Error(), `${1}*removed*${2}`)
+		return nil, fmt.Errorf("error when performing query %q at %q: %s", query, addr, errWithoutPassword)
 	}
 	if resp.StatusCode != http.StatusOK {
 		respBody, _ := ioutil.ReadAll(resp.Body)
